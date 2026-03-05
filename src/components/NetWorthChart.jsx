@@ -1,6 +1,5 @@
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ReferenceLine,
 } from 'recharts';
 import { useState, useMemo } from 'react';
 import { fmtUSD, fmtChartAxis } from '../engine/format';
@@ -9,7 +8,7 @@ import TooltipWrap from './Tooltip';
 const LINES = [
   { key: 'sell', dataKey: 'sell', label: 'Sell to Live', color: '#fc8181' },
   { key: 'bloc', dataKey: 'bloc', label: 'BLOC', color: '#4299e1' },
-  { key: 'hybrid', dataKey: 'hybrid', label: 'Hybrid', color: '#48bb78' },
+  { key: 'revolving', dataKey: 'revolving', label: 'Revolving', color: '#48bb78' },
 ];
 
 function CustomTooltip({ active, payload }) {
@@ -28,8 +27,8 @@ function CustomTooltip({ active, payload }) {
   );
 }
 
-export default function NetWorthChart({ simResults, inflationAdjusted, onToggleInflation, inflation, hybridSwitchYear }) {
-  const [visible, setVisible] = useState({ sell: true, bloc: true, hybrid: true });
+export default function NetWorthChart({ simResults, inflationAdjusted, onToggleInflation, inflation }) {
+  const [visible, setVisible] = useState({ sell: true, bloc: true, revolving: true });
 
   const toggle = (key) => setVisible(prev => ({ ...prev, [key]: !prev[key] }));
 
@@ -44,7 +43,7 @@ export default function NetWorthChart({ simResults, inflationAdjusted, onToggleI
         year: i / 12,
         sell: (simResults.sellToLive.data[i]?.portfolioValue || 0) * deflator,
         bloc: (simResults.bloc.data[i]?.portfolioValue || 0) * deflator,
-        hybrid: (simResults.hybrid.data[i]?.portfolioValue || 0) * deflator,
+        revolving: (simResults.revolving.data[i]?.portfolioValue || 0) * deflator,
       });
     }
     return result;
@@ -86,15 +85,6 @@ export default function NetWorthChart({ simResults, inflationAdjusted, onToggleI
           <XAxis dataKey="year" stroke="#718096" tickFormatter={v => `${Math.round(v)}y`} />
           <YAxis stroke="#718096" tickFormatter={fmtChartAxis} />
           <Tooltip content={<CustomTooltip />} />
-          {visible.hybrid && hybridSwitchYear != null && (
-            <ReferenceLine
-              x={hybridSwitchYear}
-              stroke="#48bb78"
-              strokeDasharray="5 5"
-              strokeWidth={1.5}
-              label={{ value: 'Hybrid Switch', position: 'top', fill: '#48bb78', fontSize: 11 }}
-            />
-          )}
           {LINES.map(l => visible[l.key] && (
             <Area
               key={l.key}

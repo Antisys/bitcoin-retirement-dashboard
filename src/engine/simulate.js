@@ -176,28 +176,32 @@ export function simulateBLOC(config) {
   };
 }
 
-export function simulateHybrid(config) {
-  const { btc, btcPrice, expenses, growthRate, inflation, apr, targetLTV, years, switchPrice, drawStartMonth = 0 } = config;
+// Revolving Loan: borrow for a fixed term, sell BTC to repay, repeat
+export function simulateRevolving(config) {
+  const { btc, btcPrice, expenses, growthRate, inflation, apr, targetLTV, years, loanTermYears = 3, drawStartMonth = 0 } = config;
   const months = years * 12;
   const monthlyInflation = Math.pow(1 + inflation / 100, 1 / 12);
   const monthlyRate = apr / 100 / 12;
   const maxLTV = 0.85;
-  const threshold = switchPrice || 200000;
+  const loanTermMonths = loanTermYears * 12;
 
   const data = [];
   let currentBTC = btc;
   let currentExpenses = expenses;
   let locBalance = 0;
   let totalInterest = 0;
-  let switchMonth = null;
+  let totalBTCSold = 0;
   let depletedMonth = null;
   let liquidatedMonth = null;
-  let usingBLOC = false;
+  let loanStartMonth = 0; // when current loan cycle started
+  let repaymentMonths = []; // months where loan was repaid
 
   for (let m = 0; m <= months; m++) {
     const currentPrice = priceAtMonth(m, btcPrice, growthRate);
     const collateralValue = currentBTC * currentPrice;
-    const ltv = usingBLOC && collateralValue > 0 ? locBalance / collateralValue : 0;
+    const ltv = collateralValue > 0 ? locBalance / collateralValue : 0;
+    const monthlyInterest = locBalance * monthlyRate;
+    const monthsIntoLoan = m - loanStartMonth;
 
     data.push({
       month: m,
@@ -206,73 +210,86 @@ export function simulateHybrid(config) {
       btcPrice: currentPrice,
       portfolioValue: currentBTC * currentPrice - locBalance,
       expenses: currentExpenses,
-      monthlyInterest: usingBLOC ? locBalance * monthlyRate : 0,
+      monthlyInterest,
       btcSold: 0,
       locBalance,
       ltv,
       totalInterest,
-      strategy: usingBLOC ? 'bloc' : 'sellToLive',
-      isSwitchPoint: false,
+      loanMonth: monthsIntoLoan,
+      loanTermMonths,
+      isRepayment: false,
+      strategy: 'revolving',
     });
 
     if (m === months) break;
 
     if (depletedMonth || liquidatedMonth) {
-      // After depletion/liquidation: nothing left
       currentBTC = 0;
       locBalance = 0;
       currentExpenses *= monthlyInflation;
       continue;
     }
 
-    if (!usingBLOC && currentPrice >= threshold) {
-      usingBLOC = true;
-      switchMonth = m;
-      data[data.length - 1].isSwitchPoint = true;
-    }
+    // Interest accrues
+    locBalance += monthlyInterest;
+    totalInterest += monthlyInterest;
 
-    if (m < drawStartMonth) {
-      if (usingBLOC) {
-        const interest = locBalance * monthlyRate;
-        locBalance += interest;
-        totalInterest += interest;
-      }
-    } else if (usingBLOC) {
-      const interest = locBalance * monthlyRate;
-      locBalance += interest;
-      totalInterest += interest;
-
+    // Draw expenses (add to loan) — check borrow limit first
+    if (m >= drawStartMonth) {
       const newBalance = locBalance + currentExpenses;
       const newLTV = collateralValue > 0 ? newBalance / collateralValue : Infinity;
 
       if (newLTV >= maxLTV) {
+        // Can't borrow more — liquidation
         liquidatedMonth = m + 1;
         currentBTC = 0;
         locBalance = 0;
-      } else {
-        locBalance = newBalance;
+        currentExpenses *= monthlyInflation;
+        continue;
       }
+      locBalance = newBalance;
+    }
 
-      if (!liquidatedMonth) {
-        const currentLTV = collateralValue > 0 ? locBalance / collateralValue : Infinity;
-        if (currentLTV >= maxLTV) {
-          liquidatedMonth = m + 1;
-          currentBTC = 0;
-          locBalance = 0;
-        }
+    // Check LTV after all changes
+    if (!liquidatedMonth) {
+      const currentLTV = collateralValue > 0 ? locBalance / collateralValue : Infinity;
+      if (currentLTV >= maxLTV) {
+        liquidatedMonth = m + 1;
+        currentBTC = 0;
+        locBalance = 0;
+        currentExpenses *= monthlyInflation;
+        continue;
       }
-    } else {
-      if (currentBTC <= 0) {
-        if (!depletedMonth) depletedMonth = m;
+    }
+
+    // Check if loan term is up — repay by selling BTC
+    if (m >= drawStartMonth && monthsIntoLoan >= loanTermMonths && locBalance > 0) {
+      const btcToSell = locBalance / currentPrice;
+      if (btcToSell >= currentBTC) {
+        // Can't repay — depleted
+        data[data.length - 1].btcSold = currentBTC;
+        totalBTCSold += currentBTC;
+        currentBTC = 0;
+        locBalance = 0;
+        depletedMonth = m + 1;
       } else {
-        const btcNeeded = currentExpenses / currentPrice;
-        const sold = Math.min(btcNeeded, currentBTC);
-        data[data.length - 1].btcSold = sold;
-        currentBTC -= sold;
-        if (currentBTC <= 1e-10) {
-          currentBTC = 0;
-          if (!depletedMonth) depletedMonth = m + 1;
-        }
+        data[data.length - 1].btcSold = btcToSell;
+        data[data.length - 1].isRepayment = true;
+        totalBTCSold += btcToSell;
+        currentBTC -= btcToSell;
+        locBalance = 0;
+        loanStartMonth = m + 1;
+        repaymentMonths.push(m);
+      }
+    }
+
+    // Check LTV after all changes
+    if (!depletedMonth && !liquidatedMonth) {
+      const currentLTV = collateralValue > 0 ? locBalance / collateralValue : Infinity;
+      if (currentLTV >= maxLTV) {
+        liquidatedMonth = m + 1;
+        currentBTC = 0;
+        locBalance = 0;
       }
     }
 
@@ -282,58 +299,15 @@ export function simulateHybrid(config) {
   const finalData = data[data.length - 1];
   return {
     data,
-    switchMonth,
     depletedMonth,
     liquidatedMonth,
     totalInterest,
+    totalBTCSold,
+    repaymentMonths,
+    loanTermYears,
     finalBTC: currentBTC,
     finalValue: finalData.portfolioValue,
   };
-}
-
-// Optimal hybrid switch price — sweep to find best final value / longest runway
-export function calculateOptimalSwitchPrice(config) {
-  const { btcPrice, growthRate } = config;
-  // Test switch prices from current price up to 50x current price
-  const lo = btcPrice;
-  const hi = btcPrice * 50;
-  const steps = 60;
-  const increment = (hi - lo) / steps;
-
-  let bestPrice = btcPrice;
-  let bestScore = -Infinity;
-
-  for (let i = 0; i <= steps; i++) {
-    const sp = Math.round(lo + i * increment);
-    const r = simulateHybrid({ ...config, switchPrice: sp });
-    const failMonth = r.depletedMonth || r.liquidatedMonth;
-    // Score: prioritize survival (runway months), then final value
-    const runway = failMonth || config.years * 12;
-    const score = runway * 1e15 + (r.finalValue || 0);
-    if (score > bestScore) {
-      bestScore = score;
-      bestPrice = sp;
-    }
-  }
-
-  // Refine around the best with finer steps
-  const refineLo = Math.max(btcPrice, bestPrice - increment);
-  const refineHi = bestPrice + increment;
-  const fineStep = (refineHi - refineLo) / 40;
-
-  for (let i = 0; i <= 40; i++) {
-    const sp = Math.round(refineLo + i * fineStep);
-    const r = simulateHybrid({ ...config, switchPrice: sp });
-    const failMonth = r.depletedMonth || r.liquidatedMonth;
-    const runway = failMonth || config.years * 12;
-    const score = runway * 1e15 + (r.finalValue || 0);
-    if (score > bestScore) {
-      bestScore = score;
-      bestPrice = sp;
-    }
-  }
-
-  return Math.round(bestPrice / 1000) * 1000; // round to nearest 1000
 }
 
 // Safe expenses calculator — binary search for max monthly expenses
@@ -390,8 +364,8 @@ export function calculateMinBTC(config) {
     return !r.liquidatedMonth && (!r.marginCallMonths || r.marginCallMonths.length === 0);
   }
 
-  function isHybridSafe(btcAmount) {
-    const r = simulateHybrid({ ...config, btc: btcAmount });
+  function isRevolvingSafe(btcAmount) {
+    const r = simulateRevolving({ ...config, btc: btcAmount });
     return !r.depletedMonth && !r.liquidatedMonth;
   }
 
@@ -413,9 +387,9 @@ export function calculateMinBTC(config) {
 
   const minSell = search(isSellSafe);
   const minBLOC = search(isBlocSafe);
-  const minHybrid = search(isHybridSafe);
+  const minRevolving = search(isRevolvingSafe);
 
-  return { minSell, minBLOC, minHybrid };
+  return { minSell, minBLOC, minRevolving };
 }
 
 // Module 7 — Withdrawal rate calculator

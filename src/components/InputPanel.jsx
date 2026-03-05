@@ -65,7 +65,7 @@ function PresetGroup({ label, tooltip, value, onChange, presets }) {
   );
 }
 
-export default function InputPanel({ inputs, onChange, portfolioValue, optimalSwitchPrice }) {
+export default function InputPanel({ inputs, onChange, portfolioValue }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const update = (key, val) => onChange(prev => ({ ...prev, [key]: val }));
 
@@ -170,35 +170,18 @@ export default function InputPanel({ inputs, onChange, portfolioValue, optimalSw
             min={10} max={80} step={5}
           />
 
-          <div className="input-group">
-            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Tooltip text="In the Hybrid strategy, you sell BTC until the price reaches this level, then switch to borrowing against it.">
-                Hybrid Switch Price
-              </Tooltip>
-              <button
-                style={{
-                  fontSize: 10, padding: '2px 8px', borderRadius: 4,
-                  border: '1px solid #48bb78', background: 'transparent',
-                  color: '#48bb78', cursor: 'pointer',
-                }}
-                onClick={() => update('switchPrice', optimalSwitchPrice)}
-              >
-                Optimize ({fmtUSD(optimalSwitchPrice)})
-              </button>
-            </label>
-            <input
-              type="number"
-              value={inputs.switchPrice}
-              onChange={e => { const v = Number(e.target.value); if (!isNaN(v)) update('switchPrice', v); }}
-              min={50000} max={5000000} step={10000}
-            />
-            <input
-              type="range"
-              value={inputs.switchPrice}
-              onChange={e => update('switchPrice', Number(e.target.value))}
-              min={50000} max={5000000} step={10000}
-            />
-          </div>
+          <PresetGroup
+            label="Loan Term (Revolving)"
+            tooltip="How many years each loan cycle lasts before you sell BTC to repay and start a new loan. Shorter terms = less interest but more frequent sells."
+            value={inputs.loanTermYears}
+            onChange={v => update('loanTermYears', v)}
+            presets={[
+              { label: '2 years', value: 2 },
+              { label: '3 years', value: 3 },
+              { label: '5 years', value: 5 },
+              { label: '7 years', value: 7 },
+            ]}
+          />
 
           <SliderInput
             label="Start Drawing at Month"

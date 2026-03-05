@@ -15,10 +15,10 @@ const STRATEGIES = [
     tooltip: 'Bitcoin Line of Credit: borrow cash against your BTC instead of selling. All your BTC is locked as collateral. You pay interest on top of expenses. Risk: if BTC drops too much, liquidation.',
   },
   {
-    key: 'hybrid',
-    label: 'Hybrid',
+    key: 'revolving',
+    label: 'Revolving',
     color: '#48bb78',
-    tooltip: 'Start by selling BTC while the price is low, then switch to borrowing (BLOC) once BTC price is high enough. Balances both approaches.',
+    tooltip: 'Revolving Loan: borrow against your BTC for a fixed term (e.g. 3 years), then sell just enough BTC to repay the loan and start a new cycle. Limits compound interest while keeping most of your BTC.',
   },
 ];
 
@@ -38,17 +38,19 @@ function getRunway(result, totalYears) {
 }
 
 function getRecommendation(minBTC, currentBTC) {
-  const { minSell, minBLOC, minHybrid } = minBTC;
-  const allSafe = currentBTC >= minSell && currentBTC >= minBLOC;
-  const sellSafe = currentBTC >= minSell;
+  const { minSell, minBLOC, minRevolving } = minBTC;
   const blocSafe = currentBTC >= minBLOC;
-  const hybridSafe = currentBTC >= minHybrid;
+  const revolvingSafe = currentBTC >= minRevolving;
+  const sellSafe = currentBTC >= minSell;
 
-  if (blocSafe && allSafe) {
+  if (revolvingSafe && blocSafe) {
+    return { text: 'Revolving recommended — periodic repayment limits interest, keeps most BTC', color: '#48bb78' };
+  }
+  if (blocSafe) {
     return { text: 'BLOC recommended — keeps all your BTC, growth outpaces the loan', color: '#4299e1' };
   }
-  if (hybridSafe) {
-    return { text: 'Hybrid recommended — sell early, switch to BLOC once price rises', color: '#48bb78' };
+  if (revolvingSafe) {
+    return { text: 'Revolving recommended — periodic repayment keeps the loan manageable', color: '#48bb78' };
   }
   if (sellSafe) {
     return { text: 'Sell to Live recommended — simplest and safest at your BTC level', color: '#fc8181' };
@@ -72,15 +74,15 @@ export default function StrategyComparison({ simResults, years, safeExpenses, cu
         <div style={{ fontSize: 14, fontWeight: 600, color: rec.color, marginBottom: 8 }}>
           {rec.text}
         </div>
-        <div style={{ display: 'flex', gap: 24, fontSize: 12, color: '#a0aec0' }}>
+        <div style={{ display: 'flex', gap: 24, fontSize: 12, color: '#a0aec0', flexWrap: 'wrap' }}>
           <Tooltip text="Minimum BTC needed for Sell to Live to last your entire time horizon without running out.">
             <span>Sell to Live: <strong style={{ color: currentBTC >= minBTC.minSell ? '#48bb78' : '#fc8181' }}>{minBTC.minSell === Infinity ? '—' : fmtBTC(minBTC.minSell)}</strong> min</span>
           </Tooltip>
           <Tooltip text="Minimum BTC needed for BLOC to stay safe (no margin calls) over your entire time horizon.">
             <span>BLOC: <strong style={{ color: currentBTC >= minBTC.minBLOC ? '#48bb78' : '#fc8181' }}>{minBTC.minBLOC === Infinity ? '—' : fmtBTC(minBTC.minBLOC)}</strong> min</span>
           </Tooltip>
-          <Tooltip text="Minimum BTC needed for Hybrid to last your entire time horizon without depletion or liquidation.">
-            <span>Hybrid: <strong style={{ color: currentBTC >= minBTC.minHybrid ? '#48bb78' : '#fc8181' }}>{minBTC.minHybrid === Infinity ? '—' : fmtBTC(minBTC.minHybrid)}</strong> min</span>
+          <Tooltip text="Minimum BTC needed for Revolving Loan to last your entire time horizon without depletion or liquidation.">
+            <span>Revolving: <strong style={{ color: currentBTC >= minBTC.minRevolving ? '#48bb78' : '#fc8181' }}>{minBTC.minRevolving === Infinity ? '—' : fmtBTC(minBTC.minRevolving)}</strong> min</span>
           </Tooltip>
         </div>
       </div>
@@ -135,7 +137,7 @@ export default function StrategyComparison({ simResults, years, safeExpenses, cu
                   </div>
                 </Tooltip>
 
-                {(s.key === 'bloc' || s.key === 'hybrid') && result.data && (() => {
+                {(s.key === 'bloc' || s.key === 'revolving') && result.data && (() => {
                   const sampleMonth = Math.min(12, result.data.length - 1);
                   const mi = result.data[sampleMonth]?.monthlyInterest || 0;
                   return mi > 0 ? (
@@ -153,6 +155,15 @@ export default function StrategyComparison({ simResults, years, safeExpenses, cu
                     <div className="comparison-stat">
                       <span className="label">Borrow Limit</span>
                       <span className="value">{fmtUSD(result.data[0].borrowLimit || 0)}</span>
+                    </div>
+                  </Tooltip>
+                )}
+
+                {s.key === 'revolving' && result.repaymentMonths && (
+                  <Tooltip text="Total BTC sold across all loan repayments over the time horizon.">
+                    <div className="comparison-stat">
+                      <span className="label">Total BTC Sold</span>
+                      <span className="value">{fmtBTC(result.totalBTCSold || 0)}</span>
                     </div>
                   </Tooltip>
                 )}

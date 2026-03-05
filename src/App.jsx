@@ -6,10 +6,9 @@ import MonthlyPlaybook from './components/MonthlyPlaybook';
 import {
   simulateSellToLive,
   simulateBLOC,
-  simulateHybrid,
+  simulateRevolving,
   calculateSafeExpenses,
   calculateMinBTC,
-  calculateOptimalSwitchPrice,
 } from './engine/simulate';
 import './App.css';
 
@@ -22,7 +21,7 @@ const DEFAULT_INPUTS = {
   apr: 13,
   targetLTV: 50,
   years: 30,
-  switchPrice: 200000,
+  loanTermYears: 3,
   drawStartMonth: 0,
 };
 
@@ -44,12 +43,11 @@ export default function App() {
   const simResults = useMemo(() => ({
     sellToLive: simulateSellToLive(inputs),
     bloc: simulateBLOC(inputs),
-    hybrid: simulateHybrid(inputs),
+    revolving: simulateRevolving(inputs),
   }), [inputs]);
 
   const safeExpenses = useMemo(() => calculateSafeExpenses(inputs), [inputs]);
   const minBTC = useMemo(() => calculateMinBTC(inputs), [inputs]);
-  const optimalSwitchPrice = useMemo(() => calculateOptimalSwitchPrice(inputs), [inputs]);
   const portfolioValue = inputs.btc * inputs.btcPrice;
 
   return (
@@ -57,7 +55,7 @@ export default function App() {
       <aside className="sidebar">
         <h1 className="sidebar-title">Bitcoin Retirement</h1>
         <p className="sidebar-subtitle">How long does your stack last?</p>
-        <InputPanel inputs={inputs} onChange={setInputs} portfolioValue={portfolioValue} optimalSwitchPrice={optimalSwitchPrice} />
+        <InputPanel inputs={inputs} onChange={setInputs} portfolioValue={portfolioValue} />
       </aside>
 
       <main className="main-content">
@@ -68,7 +66,6 @@ export default function App() {
           inflationAdjusted={inflationAdjusted}
           onToggleInflation={() => setInflationAdjusted(!inflationAdjusted)}
           inflation={inputs.inflation}
-          hybridSwitchYear={simResults.hybrid.switchMonth != null ? simResults.hybrid.switchMonth / 12 : null}
         />
 
         <MonthlyPlaybook

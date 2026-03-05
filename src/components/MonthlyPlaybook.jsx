@@ -5,7 +5,7 @@ import Tooltip from './Tooltip';
 const STRATEGIES = [
   { key: 'sellToLive', label: 'Sell to Live' },
   { key: 'bloc', label: 'BLOC' },
-  { key: 'hybrid', label: 'Hybrid' },
+  { key: 'revolving', label: 'Revolving' },
 ];
 
 export default function MonthlyPlaybook({ simResults, maxMonths, startExpenses, drawStartMonth }) {
@@ -23,7 +23,7 @@ export default function MonthlyPlaybook({ simResults, maxMonths, startExpenses, 
   const result = simResults[activeStrategy];
   const d = result.data[month] || result.data[result.data.length - 1];
 
-  const isBLOC = activeStrategy === 'bloc' || (activeStrategy === 'hybrid' && d.strategy === 'bloc');
+  const hasLoan = activeStrategy === 'bloc' || activeStrategy === 'revolving';
 
   const drawStart = Number(drawStartMonth) || 0;
 
@@ -33,10 +33,17 @@ export default function MonthlyPlaybook({ simResults, maxMonths, startExpenses, 
     const waitMonths = drawStart % 12;
     action = `Not drawing yet — starts at month ${drawStart} (${waitYears}y ${waitMonths}m)`;
     actionTip = 'You haven\'t started withdrawing from your Bitcoin yet. No selling or borrowing happens until the start month you configured.';
-  } else if (isBLOC) {
+  } else if (d.isRepayment) {
+    const soldValue = d.btcSold * d.btcPrice;
+    action = `REPAY LOAN — sell ${d.btcSold.toFixed(6)} BTC (${fmtUSD(soldValue)}) to clear ${fmtUSD(d.locBalance)} debt, start new cycle`;
+    actionTip = 'Loan term is up. You sell just enough BTC to repay the entire loan balance, then start borrowing again from zero.';
+  } else if (hasLoan && d.locBalance > 0) {
     const mi = d.monthlyInterest || 0;
     action = `Add ${fmtUSD(d.expenses + mi)} to loan (${fmtUSD(d.expenses)} living + ${fmtUSD(mi)} interest)`;
     actionTip = `Your living expenses (${fmtUSD(d.expenses)}) plus loan interest (${fmtUSD(mi)}) get added to your loan balance this month.`;
+  } else if (hasLoan) {
+    action = `Borrow ${fmtUSD(d.expenses)} for expenses (new loan cycle)`;
+    actionTip = 'Starting a new loan cycle. Your expenses are added to a fresh loan balance.';
   } else {
     action = d.btcSold > 0
       ? `Sell ${d.btcSold.toFixed(6)} BTC (${fmtUSD(d.expenses)}) to cover expenses`
@@ -66,53 +73,45 @@ export default function MonthlyPlaybook({ simResults, maxMonths, startExpenses, 
         ))}
       </div>
 
-      {/* Hybrid phase indicator */}
-      {activeStrategy === 'hybrid' && (() => {
-        const switchMonth = result.switchMonth;
-        const phase = d.strategy === 'bloc' ? 'Borrowing (BLOC)' : 'Selling BTC';
-        const phaseColor = d.strategy === 'bloc' ? '#4299e1' : '#fc8181';
-        const switchYear = switchMonth != null ? (switchMonth / 12).toFixed(1) : null;
-        const switchPrice = switchMonth != null ? result.data[switchMonth]?.btcPrice : null;
+      {/* Revolving loan cycle indicator */}
+      {activeStrategy === 'revolving' && (() => {
+        const termMonths = d.loanTermMonths || 36;
+        const loanMonth = d.loanMonth || 0;
+        const cycleProgress = Math.min(loanMonth / termMonths, 1);
+        const cycleNumber = result.repaymentMonths
+          ? result.repaymentMonths.filter(rm => rm < month).length + 1
+          : 1;
+        const nextRepay = result.repaymentMonths?.find(rm => rm >= month);
+
         return (
-          <div style={{ margin: '12px 0', padding: '10px 16px', background: '#0f1118', borderRadius: 8, borderLeft: `3px solid ${phaseColor}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Tooltip text="Hybrid starts by selling BTC for expenses. Once BTC price hits the switch price, it stops selling and switches to borrowing against your BTC (BLOC).">
-                <span style={{ fontSize: 13, color: '#a0aec0' }}>
-                  Phase: <strong style={{ color: phaseColor }}>{phase}</strong>
+          <div style={{ margin: '12px 0', padding: '10px 16px', background: '#0f1118', borderRadius: 8, borderLeft: '3px solid #48bb78' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+              <Tooltip text="Each loan cycle: borrow for the term, then sell BTC to repay the full loan and start fresh. This resets compound interest.">
+                <span style={{ color: '#a0aec0' }}>
+                  Loan Cycle <strong style={{ color: '#48bb78' }}>#{cycleNumber}</strong>
+                  {' — '}month {loanMonth} of {termMonths}
                 </span>
               </Tooltip>
-              {switchMonth != null ? (
-                <Tooltip text={`At month ${switchMonth} (year ${switchYear}), BTC hits ${fmtUSD(switchPrice)} and the strategy switches from selling to borrowing.`}>
-                  <span style={{ fontSize: 12, color: '#718096' }}>
-                    Switch at month {switchMonth} ({switchYear}y) — BTC {fmtUSD(switchPrice)}
-                  </span>
-                </Tooltip>
-              ) : (
+              {nextRepay != null && (
                 <span style={{ fontSize: 12, color: '#718096' }}>
-                  BTC never reaches switch price — selling entire horizon
+                  Next repayment: month {nextRepay} ({(nextRepay / 12).toFixed(1)}y)
                 </span>
               )}
             </div>
-            {/* Phase progress bar */}
-            {switchMonth != null && (
-              <div style={{ marginTop: 8, height: 6, background: '#2d3748', borderRadius: 3, position: 'relative', overflow: 'hidden' }}>
-                <div style={{
-                  position: 'absolute', left: 0, top: 0, height: '100%',
-                  width: `${(switchMonth / maxMonths) * 100}%`,
-                  background: '#fc8181', borderRadius: '3px 0 0 3px',
-                }} />
-                <div style={{
-                  position: 'absolute', top: 0, height: '100%',
-                  left: `${(switchMonth / maxMonths) * 100}%`,
-                  right: 0,
-                  background: '#4299e1', borderRadius: '0 3px 3px 0',
-                }} />
-                {/* Current position marker */}
-                <div style={{
-                  position: 'absolute', top: -3, height: 12, width: 3,
-                  left: `${(month / maxMonths) * 100}%`,
-                  background: '#f7931a', borderRadius: 2,
-                }} />
+            {/* Cycle progress bar */}
+            <div style={{ marginTop: 8, height: 6, background: '#2d3748', borderRadius: 3, position: 'relative', overflow: 'hidden' }}>
+              <div style={{
+                position: 'absolute', left: 0, top: 0, height: '100%',
+                width: `${cycleProgress * 100}%`,
+                background: cycleProgress > 0.8 ? '#ecc94b' : '#48bb78',
+                borderRadius: 3,
+                transition: 'width 0.1s',
+              }} />
+            </div>
+            {result.repaymentMonths && result.repaymentMonths.length > 0 && (
+              <div style={{ marginTop: 6, fontSize: 11, color: '#718096' }}>
+                Repayments: {result.repaymentMonths.length} cycles over {(maxMonths / 12).toFixed(0)} years
+                {' — '}Total BTC sold: {(result.totalBTCSold || 0).toFixed(4)}
               </div>
             )}
           </div>
@@ -163,7 +162,7 @@ export default function MonthlyPlaybook({ simResults, maxMonths, startExpenses, 
             <div className="label">Net Worth</div>
           </div>
         </Tooltip>
-        {isBLOC && (
+        {hasLoan && d.locBalance > 0 && (
           <>
             <Tooltip text="How much you owe on your Bitcoin-backed loan. This grows with interest and expenses each month.">
               <div className="playbook-item">
@@ -191,8 +190,10 @@ export default function MonthlyPlaybook({ simResults, maxMonths, startExpenses, 
       </div>
 
       <Tooltip text={actionTip}>
-        <div className="playbook-action">
-          <span style={{ color: '#f7931a', fontWeight: 600 }}>This month: </span>
+        <div className="playbook-action" style={d.isRepayment ? { background: '#1a2e1a', borderLeft: '3px solid #48bb78' } : {}}>
+          <span style={{ color: d.isRepayment ? '#48bb78' : '#f7931a', fontWeight: 600 }}>
+            {d.isRepayment ? 'REPAYMENT: ' : 'This month: '}
+          </span>
           {action}
         </div>
       </Tooltip>
