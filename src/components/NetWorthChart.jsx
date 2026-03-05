@@ -1,5 +1,6 @@
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ReferenceLine,
 } from 'recharts';
 import { useState, useMemo } from 'react';
 import { fmtUSD, fmtChartAxis } from '../engine/format';
@@ -27,7 +28,7 @@ function CustomTooltip({ active, payload }) {
   );
 }
 
-export default function NetWorthChart({ simResults, inflationAdjusted, onToggleInflation, inflation }) {
+export default function NetWorthChart({ simResults, inflationAdjusted, onToggleInflation, inflation, hybridSwitchYear }) {
   const [visible, setVisible] = useState({ sell: true, bloc: true, hybrid: true });
 
   const toggle = (key) => setVisible(prev => ({ ...prev, [key]: !prev[key] }));
@@ -85,6 +86,15 @@ export default function NetWorthChart({ simResults, inflationAdjusted, onToggleI
           <XAxis dataKey="year" stroke="#718096" tickFormatter={v => `${Math.round(v)}y`} />
           <YAxis stroke="#718096" tickFormatter={fmtChartAxis} />
           <Tooltip content={<CustomTooltip />} />
+          {visible.hybrid && hybridSwitchYear != null && (
+            <ReferenceLine
+              x={hybridSwitchYear}
+              stroke="#48bb78"
+              strokeDasharray="5 5"
+              strokeWidth={1.5}
+              label={{ value: 'Hybrid Switch', position: 'top', fill: '#48bb78', fontSize: 11 }}
+            />
+          )}
           {LINES.map(l => visible[l.key] && (
             <Area
               key={l.key}

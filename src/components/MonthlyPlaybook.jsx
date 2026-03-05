@@ -66,6 +66,59 @@ export default function MonthlyPlaybook({ simResults, maxMonths, startExpenses, 
         ))}
       </div>
 
+      {/* Hybrid phase indicator */}
+      {activeStrategy === 'hybrid' && (() => {
+        const switchMonth = result.switchMonth;
+        const phase = d.strategy === 'bloc' ? 'Borrowing (BLOC)' : 'Selling BTC';
+        const phaseColor = d.strategy === 'bloc' ? '#4299e1' : '#fc8181';
+        const switchYear = switchMonth != null ? (switchMonth / 12).toFixed(1) : null;
+        const switchPrice = switchMonth != null ? result.data[switchMonth]?.btcPrice : null;
+        return (
+          <div style={{ margin: '12px 0', padding: '10px 16px', background: '#0f1118', borderRadius: 8, borderLeft: `3px solid ${phaseColor}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Tooltip text="Hybrid starts by selling BTC for expenses. Once BTC price hits the switch price, it stops selling and switches to borrowing against your BTC (BLOC).">
+                <span style={{ fontSize: 13, color: '#a0aec0' }}>
+                  Phase: <strong style={{ color: phaseColor }}>{phase}</strong>
+                </span>
+              </Tooltip>
+              {switchMonth != null ? (
+                <Tooltip text={`At month ${switchMonth} (year ${switchYear}), BTC hits ${fmtUSD(switchPrice)} and the strategy switches from selling to borrowing.`}>
+                  <span style={{ fontSize: 12, color: '#718096' }}>
+                    Switch at month {switchMonth} ({switchYear}y) — BTC {fmtUSD(switchPrice)}
+                  </span>
+                </Tooltip>
+              ) : (
+                <span style={{ fontSize: 12, color: '#718096' }}>
+                  BTC never reaches switch price — selling entire horizon
+                </span>
+              )}
+            </div>
+            {/* Phase progress bar */}
+            {switchMonth != null && (
+              <div style={{ marginTop: 8, height: 6, background: '#2d3748', borderRadius: 3, position: 'relative', overflow: 'hidden' }}>
+                <div style={{
+                  position: 'absolute', left: 0, top: 0, height: '100%',
+                  width: `${(switchMonth / maxMonths) * 100}%`,
+                  background: '#fc8181', borderRadius: '3px 0 0 3px',
+                }} />
+                <div style={{
+                  position: 'absolute', top: 0, height: '100%',
+                  left: `${(switchMonth / maxMonths) * 100}%`,
+                  right: 0,
+                  background: '#4299e1', borderRadius: '0 3px 3px 0',
+                }} />
+                {/* Current position marker */}
+                <div style={{
+                  position: 'absolute', top: -3, height: 12, width: 3,
+                  left: `${(month / maxMonths) * 100}%`,
+                  background: '#f7931a', borderRadius: 2,
+                }} />
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="input-group" style={{ marginTop: 12 }}>
         <label>Month {month} — Year {yearLabel}</label>
         <input

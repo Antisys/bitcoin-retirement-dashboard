@@ -291,6 +291,51 @@ export function simulateHybrid(config) {
   };
 }
 
+// Optimal hybrid switch price — sweep to find best final value / longest runway
+export function calculateOptimalSwitchPrice(config) {
+  const { btcPrice, growthRate } = config;
+  // Test switch prices from current price up to 50x current price
+  const lo = btcPrice;
+  const hi = btcPrice * 50;
+  const steps = 60;
+  const increment = (hi - lo) / steps;
+
+  let bestPrice = btcPrice;
+  let bestScore = -Infinity;
+
+  for (let i = 0; i <= steps; i++) {
+    const sp = Math.round(lo + i * increment);
+    const r = simulateHybrid({ ...config, switchPrice: sp });
+    const failMonth = r.depletedMonth || r.liquidatedMonth;
+    // Score: prioritize survival (runway months), then final value
+    const runway = failMonth || config.years * 12;
+    const score = runway * 1e15 + (r.finalValue || 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestPrice = sp;
+    }
+  }
+
+  // Refine around the best with finer steps
+  const refineLo = Math.max(btcPrice, bestPrice - increment);
+  const refineHi = bestPrice + increment;
+  const fineStep = (refineHi - refineLo) / 40;
+
+  for (let i = 0; i <= 40; i++) {
+    const sp = Math.round(refineLo + i * fineStep);
+    const r = simulateHybrid({ ...config, switchPrice: sp });
+    const failMonth = r.depletedMonth || r.liquidatedMonth;
+    const runway = failMonth || config.years * 12;
+    const score = runway * 1e15 + (r.finalValue || 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestPrice = sp;
+    }
+  }
+
+  return Math.round(bestPrice / 1000) * 1000; // round to nearest 1000
+}
+
 // Safe expenses calculator — binary search for max monthly expenses
 // where BLOC never exceeds safetyLTV (default 65%, margin call threshold)
 export function calculateSafeExpenses(config) {
@@ -331,6 +376,46 @@ export function calculateSafeExpenses(config) {
   }
 
   return Math.floor(lo);
+}
+
+// Strategy recommendation — find min BTC for each strategy to be safe
+export function calculateMinBTC(config) {
+  function isSellSafe(btcAmount) {
+    const r = simulateSellToLive({ ...config, btc: btcAmount });
+    return !r.depletedMonth;
+  }
+
+  function isBlocSafe(btcAmount) {
+    const r = simulateBLOC({ ...config, btc: btcAmount });
+    return !r.liquidatedMonth && (!r.marginCallMonths || r.marginCallMonths.length === 0);
+  }
+
+  function isHybridSafe(btcAmount) {
+    const r = simulateHybrid({ ...config, btc: btcAmount });
+    return !r.depletedMonth && !r.liquidatedMonth;
+  }
+
+  function search(testFn) {
+    let lo = 0.01;
+    let hi = 1000;
+    // Quick check: if not safe even at 1000 BTC, return Infinity
+    if (!testFn(hi)) return Infinity;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      if (testFn(mid)) {
+        hi = mid;
+      } else {
+        lo = mid;
+      }
+    }
+    return Math.ceil(hi * 100) / 100; // round up to 0.01
+  }
+
+  const minSell = search(isSellSafe);
+  const minBLOC = search(isBlocSafe);
+  const minHybrid = search(isHybridSafe);
+
+  return { minSell, minBLOC, minHybrid };
 }
 
 // Module 7 — Withdrawal rate calculator

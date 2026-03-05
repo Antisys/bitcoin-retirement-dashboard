@@ -37,7 +37,28 @@ function getRunway(result, totalYears) {
   return { y, m, isSafe, months };
 }
 
-export default function StrategyComparison({ simResults, years, safeExpenses, currentExpenses }) {
+function getRecommendation(minBTC, currentBTC) {
+  const { minSell, minBLOC, minHybrid } = minBTC;
+  const allSafe = currentBTC >= minSell && currentBTC >= minBLOC;
+  const sellSafe = currentBTC >= minSell;
+  const blocSafe = currentBTC >= minBLOC;
+  const hybridSafe = currentBTC >= minHybrid;
+
+  if (blocSafe && allSafe) {
+    return { text: 'BLOC recommended — keeps all your BTC, growth outpaces the loan', color: '#4299e1' };
+  }
+  if (hybridSafe) {
+    return { text: 'Hybrid recommended — sell early, switch to BLOC once price rises', color: '#48bb78' };
+  }
+  if (sellSafe) {
+    return { text: 'Sell to Live recommended — simplest and safest at your BTC level', color: '#fc8181' };
+  }
+  return { text: 'Not enough BTC for any safe strategy — consider reducing expenses or adding BTC', color: '#ecc94b' };
+}
+
+export default function StrategyComparison({ simResults, years, safeExpenses, currentExpenses, minBTC, currentBTC }) {
+  const rec = getRecommendation(minBTC, currentBTC);
+
   return (
     <div>
       <h2 className="section-title">
@@ -46,8 +67,27 @@ export default function StrategyComparison({ simResults, years, safeExpenses, cu
         </Tooltip>
       </h2>
 
+      {/* Recommendation */}
+      <div className="card" style={{ marginBottom: 12, padding: '12px 20px', borderLeft: `3px solid ${rec.color}` }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: rec.color, marginBottom: 8 }}>
+          {rec.text}
+        </div>
+        <div style={{ display: 'flex', gap: 24, fontSize: 12, color: '#a0aec0' }}>
+          <Tooltip text="Minimum BTC needed for Sell to Live to last your entire time horizon without running out.">
+            <span>Sell to Live: <strong style={{ color: currentBTC >= minBTC.minSell ? '#48bb78' : '#fc8181' }}>{minBTC.minSell === Infinity ? '—' : fmtBTC(minBTC.minSell)}</strong> min</span>
+          </Tooltip>
+          <Tooltip text="Minimum BTC needed for BLOC to stay safe (no margin calls) over your entire time horizon.">
+            <span>BLOC: <strong style={{ color: currentBTC >= minBTC.minBLOC ? '#48bb78' : '#fc8181' }}>{minBTC.minBLOC === Infinity ? '—' : fmtBTC(minBTC.minBLOC)}</strong> min</span>
+          </Tooltip>
+          <Tooltip text="Minimum BTC needed for Hybrid to last your entire time horizon without depletion or liquidation.">
+            <span>Hybrid: <strong style={{ color: currentBTC >= minBTC.minHybrid ? '#48bb78' : '#fc8181' }}>{minBTC.minHybrid === Infinity ? '—' : fmtBTC(minBTC.minHybrid)}</strong> min</span>
+          </Tooltip>
+        </div>
+      </div>
+
+      {/* Safe BLOC expenses */}
       <Tooltip text="The maximum monthly expenses you can sustain with the BLOC strategy without ever hitting a margin call (LTV staying below 65%) over your entire time horizon. Accounts for inflation and interest accumulation.">
-        <div className="safe-expenses-banner card" style={{ marginBottom: 16, padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderLeft: '3px solid #48bb78' }}>
+        <div className="card" style={{ marginBottom: 16, padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderLeft: '3px solid #48bb78' }}>
           <span style={{ color: '#a0aec0', fontSize: 13 }}>Safe BLOC Expenses (no margin call)</span>
           <span style={{ fontSize: 20, fontWeight: 700, color: safeExpenses >= currentExpenses ? '#48bb78' : '#fc8181' }}>
             {fmtUSD(safeExpenses)}<span style={{ fontSize: 12, fontWeight: 400, color: '#718096' }}>/mo</span>

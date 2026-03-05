@@ -3,6 +3,12 @@ import { fmtUSD } from '../engine/format';
 import Tooltip from './Tooltip';
 
 function SliderInput({ label, tooltip, value, onChange, min, max, step = 1 }) {
+  const [localValue, setLocalValue] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+
+  // Sync from parent when not editing
+  const displayValue = editing ? localValue : String(value);
+
   return (
     <div className="input-group">
       <label>
@@ -10,8 +16,18 @@ function SliderInput({ label, tooltip, value, onChange, min, max, step = 1 }) {
       </label>
       <input
         type="number"
-        value={value}
-        onChange={e => onChange(Number(e.target.value) || 0)}
+        value={displayValue}
+        onFocus={() => { setEditing(true); setLocalValue(String(value)); }}
+        onChange={e => {
+          setLocalValue(e.target.value);
+          const num = Number(e.target.value);
+          if (!isNaN(num) && e.target.value !== '') onChange(num);
+        }}
+        onBlur={() => {
+          setEditing(false);
+          const num = Number(localValue);
+          onChange(isNaN(num) || localValue === '' ? min : num);
+        }}
         min={min}
         max={max}
         step={step}
@@ -49,7 +65,7 @@ function PresetGroup({ label, tooltip, value, onChange, presets }) {
   );
 }
 
-export default function InputPanel({ inputs, onChange, portfolioValue }) {
+export default function InputPanel({ inputs, onChange, portfolioValue, optimalSwitchPrice }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const update = (key, val) => onChange(prev => ({ ...prev, [key]: val }));
 
@@ -154,13 +170,35 @@ export default function InputPanel({ inputs, onChange, portfolioValue }) {
             min={10} max={80} step={5}
           />
 
-          <SliderInput
-            label="Hybrid Switch Price"
-            tooltip="In the Hybrid strategy, you sell BTC until the price reaches this level, then switch to borrowing against it."
-            value={inputs.switchPrice}
-            onChange={v => update('switchPrice', v)}
-            min={50000} max={5000000} step={10000}
-          />
+          <div className="input-group">
+            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Tooltip text="In the Hybrid strategy, you sell BTC until the price reaches this level, then switch to borrowing against it.">
+                Hybrid Switch Price
+              </Tooltip>
+              <button
+                style={{
+                  fontSize: 10, padding: '2px 8px', borderRadius: 4,
+                  border: '1px solid #48bb78', background: 'transparent',
+                  color: '#48bb78', cursor: 'pointer',
+                }}
+                onClick={() => update('switchPrice', optimalSwitchPrice)}
+              >
+                Optimize ({fmtUSD(optimalSwitchPrice)})
+              </button>
+            </label>
+            <input
+              type="number"
+              value={inputs.switchPrice}
+              onChange={e => { const v = Number(e.target.value); if (!isNaN(v)) update('switchPrice', v); }}
+              min={50000} max={5000000} step={10000}
+            />
+            <input
+              type="range"
+              value={inputs.switchPrice}
+              onChange={e => update('switchPrice', Number(e.target.value))}
+              min={50000} max={5000000} step={10000}
+            />
+          </div>
 
           <SliderInput
             label="Start Drawing at Month"

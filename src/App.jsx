@@ -8,6 +8,8 @@ import {
   simulateBLOC,
   simulateHybrid,
   calculateSafeExpenses,
+  calculateMinBTC,
+  calculateOptimalSwitchPrice,
 } from './engine/simulate';
 import './App.css';
 
@@ -46,6 +48,8 @@ export default function App() {
   }), [inputs]);
 
   const safeExpenses = useMemo(() => calculateSafeExpenses(inputs), [inputs]);
+  const minBTC = useMemo(() => calculateMinBTC(inputs), [inputs]);
+  const optimalSwitchPrice = useMemo(() => calculateOptimalSwitchPrice(inputs), [inputs]);
   const portfolioValue = inputs.btc * inputs.btcPrice;
 
   return (
@@ -53,17 +57,18 @@ export default function App() {
       <aside className="sidebar">
         <h1 className="sidebar-title">Bitcoin Retirement</h1>
         <p className="sidebar-subtitle">How long does your stack last?</p>
-        <InputPanel inputs={inputs} onChange={setInputs} portfolioValue={portfolioValue} />
+        <InputPanel inputs={inputs} onChange={setInputs} portfolioValue={portfolioValue} optimalSwitchPrice={optimalSwitchPrice} />
       </aside>
 
       <main className="main-content">
-        <StrategyComparison simResults={simResults} years={inputs.years} safeExpenses={safeExpenses} currentExpenses={inputs.expenses} />
+        <StrategyComparison simResults={simResults} years={inputs.years} safeExpenses={safeExpenses} currentExpenses={inputs.expenses} minBTC={minBTC} currentBTC={inputs.btc} />
 
         <NetWorthChart
           simResults={simResults}
           inflationAdjusted={inflationAdjusted}
           onToggleInflation={() => setInflationAdjusted(!inflationAdjusted)}
           inflation={inputs.inflation}
+          hybridSwitchYear={simResults.hybrid.switchMonth != null ? simResults.hybrid.switchMonth / 12 : null}
         />
 
         <MonthlyPlaybook
